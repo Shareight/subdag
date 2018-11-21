@@ -8,6 +8,7 @@ Tasks can be run independently with `sd run pipeline task` (or `sd run task` for
 The following creates a task named `dump_users` that accepts two arguments (which can be supplied when executing with `sd run`).
 
 ```python
+# sd_tasks/dump.py
 import subdag as sd
 
 @sd.task()
@@ -28,6 +29,7 @@ The function should set up a `sd.Pipeline` object, define which tasks belong to 
 Calling ` sd.Pipeline.task(task_name) ` returns an instance of the task task_name (which has to be defined earlier by decorating a function called `task_name` with ` @sd.task `), and a tuple of the outputs produced by the task (if any).
 
 ```python
+# sd_pipelines.py
 @sd.pipeline("full retrain")
 @sd.shared_option(shared_options["prefix"])
 @sd.shared_option(shared_options["run_id"])
@@ -53,6 +55,7 @@ Usually endpoint definitions look like the one below, with the the only differen
 The below endpoint can be invoked by `sd run pp_train_update`.
 
 ```python
+# sd_endpoints.py
 @sd.endpoint("pipeline_name", final_tasks=["update"])
 def pp_train_update(p, final_tasks, **kw):
     runner = sd.DirectRunner(tasks_module, kw, fn_formatter(kw))
@@ -74,6 +77,7 @@ To manually save the contents of an artifact pass `autopersist=False` when creat
 The artifact class is responsible for persisting the data for all autopersisted outputs.
 
 ```python
+# sd_tasks/dump.py
 @sd.task()
 @sd.option("--es_host", default=os.environ.get("ES_HOST"))
 @sd.outputs(
@@ -88,7 +92,7 @@ def dump_users(es_host, **kw):
     with open("/path/to/some_other_file", "w") as f:
         f.write(...)
 
-    return {"users_mapping": users_mapping, "users_data": users_data}
+    return {"users_mapping": users_mapping, "users_data": users_iterator}
 ```
 
 Before executing a task, subdag checks that its input artifacts exist, and that its output artifacts don't; after execution it ensures that the output artifacts have been written.
@@ -101,6 +105,7 @@ If several tasks define the same option, its meaning (+ description and default 
 There is a convenience method ` @sd.shared_option ` that accepts a tuple `(args, kwargs)`, and ` @sd.shared_options `, that accepts two arguments: a list of keywords and a dictionary with `keyword => (args, kwargs)` items. The usage of both is demonstrated below.
 
 ```python
+# sd_tasks/dump.py
 shared_opts = {
     "es_host": (
         ("-eh", "--es_host"),
@@ -124,8 +129,55 @@ def dump_products(es_host, es_index, **kw):
     ...
 ```
 
+## fn_formatter
+
+Locations of artifacts should be determined using a formatting function that takes as input an artifact_id and optionally a set of keyword arguments.
+We store a dictionary of artifact_id => file_pattern pairs.
+The formating function looks up the `artifact_id` and replaces all placeholder values with either (1) the keyword arguments passed to the formatting function, (2) extra arguments when defining `p.task(task_name, **extra_args)`, (3) the arguments passed to the pipeline / task from the CLI (or their default values).
+
+To achieve this, we define a file sd_filenames.py as below.
+
+```python
+# fn_filenames.py
+import subdag as sd
+
+fns = {
+    "cats_mapping": "{prefix}/runs/{run_id}/categories/mapping.json",
+    "cats_data": "{prefix}/runs/{run_id}/categories/data.data",
+    "prods_mapping": "{prefix}/runs/{run_id}/products/mapping.json",
+    "prods_data": "{prefix}/runs/{run_id}/products/data/*.json",
+    "es_mapping": "{prefix}/runs/{run_id}/{index}/mapping.json",
+    "es_data": "{prefix}/runs/{run_id}/{index}/data/*.json",
+}
+
+def fn_formatter(cli_kwargs, **extra_kwargs):
+    return sd.fn_formatter(cli_kwargs, fns, **extra_kwargs)
+
+# somewhere in a task, endpoint or artifact
+# in a task or endpoint, kw is the **kw at the end of the task argument list
+kw = {"prefix": "/data", "run_id": "rid"}
+ff = fn_formatter(kw)
+ff("es_mapping") => /data/runs/rid/products/mapping.json
+ff("es_mapping", index="users") => /data/runs/rid/users/mapping.json
+
+```python
+# somewhere in a task, endpoint or artifact
+# in a task or endpoint, kw is the **kw at the end of the task argument list
+kw = {"prefix": "/data", "run_id": "rid"}
+ff = fn_formatter(kw)
+ff("es_mapping") => /data/runs/rid/products/mapping.json
+ff("es_mapping", index="users") => /data/runs/rid/users/mapping.json
+
+```
+
+## Project structure
+
+
+
 # Motivation for the design
 
+* It should be simple to define and run individual tasks and group them into pipelines that need to be run together. Many DAG management / ETL tools are good at building pipelines with parameters that are known up front, but these tools are cumbersome to use in the more iterative workloads that are common to machine learning / data science projects.
+* It should be easy to define arguments with defaults for individual tasks, share arguments among related tasks, and specify these in a uniform way when running individual tasks or full pipelines.
 * Artifacts and fn_formatter help reduce the errors related to creating the location of a given file, which would be done in several parts of the code. It is easy to forget to update one of those code locations.
 * Artifacts encapsulate the assumptions that a task has about the state before and after its execution. The task should fail immediately if those assumptions are violated, rather than starting a long-running job that is guaranteed to fail just before completion.
 * Autopersisting outputs both reduces code duplication and enables switching between computation modes where the outputs of one task are persisted to disk or kept in memory and immediately passed to a downstream task.

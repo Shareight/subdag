@@ -151,28 +151,50 @@ fns = {
 }
 
 def fn_formatter(cli_kwargs, **extra_kwargs):
+    # this returns a filename formatting function
+    # that is aware of the above filename patterns fns
     return sd.fn_formatter(cli_kwargs, fns, **extra_kwargs)
+```
 
-# somewhere in a task, endpoint or artifact
-# in a task or endpoint, kw is the **kw at the end of the task argument list
-kw = {"prefix": "/data", "run_id": "rid"}
-ff = fn_formatter(kw)
-ff("es_mapping") => /data/runs/rid/products/mapping.json
-ff("es_mapping", index="users") => /data/runs/rid/users/mapping.json
+This way, there is a single authorative source that defines where files are stored.
+When using built-in artifacts with `autopersist=True` don't need to manually use a fn_formatter, though often it's still convenient to use a formatting function for locations that are not explicitly marked as task output artifacts.
+The following code illustrates its use.
 
 ```python
 # somewhere in a task, endpoint or artifact
-# in a task or endpoint, kw is the **kw at the end of the task argument list
 kw = {"prefix": "/data", "run_id": "rid"}
 ff = fn_formatter(kw)
-ff("es_mapping") => /data/runs/rid/products/mapping.json
-ff("es_mapping", index="users") => /data/runs/rid/users/mapping.json
+ff("es_mapping", index="users") # => /data/runs/rid/users/mapping.json
+
+
+@sd.task()
+@sd.option("--index", default="products")
+def dump_data(**kw):
+    ff = fn_formatter(kw)
+    ff("es_mapping") # => /data/runs/rid/products/mapping.json
+    ff("es_mapping", index="users") # => /data/runs/rid/users/mapping.json
 
 ```
 
 ## Project structure
 
+subdag expects certain modules to be present at the project root (which should also be in `PYTHONPATH`).
+These modules can either be flat Python files or directories with `__init__.py` that import all the functions from the files in the directory.
 
+* `sd_tasks` - contains all `@sd.task` definitions
+* `sd_pipelines` - contains all `@sd.pipeline` definitions
+* `sd_endpoints` - contains all `@sd.endpoint` definitions
+* `sd_filenames` - contains a `fn_formatter` function
+
+subdag expects the following environment variables to be set.
+
+```
+DB_NAME (default: dags)
+DB_USER (default: root)
+DB_PASS (optional)
+DB_PORT (optional)
+PYTHONPATH
+```
 
 # Motivation for the design
 

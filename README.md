@@ -203,3 +203,7 @@ PYTHONPATH
 * Artifacts and fn_formatter help reduce the errors related to creating the location of a given file, which would be done in several parts of the code. It is easy to forget to update one of those code locations.
 * Artifacts encapsulate the assumptions that a task has about the state before and after its execution. The task should fail immediately if those assumptions are violated, rather than starting a long-running job that is guaranteed to fail just before completion.
 * Autopersisting outputs both reduces code duplication and enables switching between computation modes where the outputs of one task are persisted to disk or kept in memory and immediately passed to a downstream task.
+
+# Authors
+
+* [Mattias Arro](https://github.com/mattiasarro/)
